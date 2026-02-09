@@ -142,15 +142,78 @@
       <div id="errorBox" class="error" style="display:none;"></div>
 
       <div id="resultSection" class="section" style="display:none;">
-        <h3>Result</h3>
-        <div class="kv"><div class="k">overall_score</div><div class="v" id="overallScore">—</div></div>
-        <div class="kv"><div class="k">analysis_id</div><div class="v" id="analysisId" style="font-family:ui-monospace,monospace">—</div></div>
+  <h3>Result</h3>
 
-        <details style="margin-top:10px;">
-          <summary style="cursor:pointer;">View full JSON</summary>
-          <pre id="fullJson"></pre>
-        </details>
+  <div class="grid">
+    <div class="chip-area">
+      <div class="row" style="margin-top:0; justify-content:space-between;">
+        <div>
+          <div style="font-weight:700; font-size:16px;">Overall fit</div>
+          <div class="small" id="fitLabel">—</div>
+        </div>
+        <div class="pill ok" id="scorePill">Score: —</div>
       </div>
+
+      <div class="preview" id="fitSummary" style="max-height:none;">—</div>
+    </div>
+
+    <div class="chip-area">
+      <div style="font-weight:700; font-size:16px;">Candidate</div>
+      <div class="small" id="candHeadline">—</div>
+
+      <div class="kv"><div class="k">Name</div><div class="v" id="candName">—</div></div>
+      <div class="kv"><div class="k">Email</div><div class="v" id="candEmail">—</div></div>
+      <div class="kv"><div class="k">Phone</div><div class="v" id="candPhone">—</div></div>
+      <div class="kv"><div class="k">Location</div><div class="v" id="candLocation">—</div></div>
+      <div class="kv"><div class="k">Links</div><div class="v" id="candLinks">—</div></div>
+    </div>
+  </div>
+
+  <div class="grid section">
+    <div class="chip-area">
+      <div class="row" style="margin-top:0;">
+        <div style="font-weight:700;">Skills match</div>
+        <div class="small" id="skillsMeta">—</div>
+      </div>
+
+      <div class="row">
+        <div class="pill ok">Matched</div>
+      </div>
+      <div class="chips" id="matchedSkills"></div>
+
+      <div class="row">
+        <div class="pill warn">Missing (from must-have)</div>
+      </div>
+      <div class="chips" id="missingSkills"></div>
+    </div>
+
+    <div class="chip-area">
+      <div style="font-weight:700;">Strengths & gaps</div>
+      <div class="preview" id="strengthsGaps" style="max-height:none;">—</div>
+    </div>
+  </div>
+
+  <div class="grid section">
+    <div class="chip-area">
+      <div style="font-weight:700;">Experience</div>
+      <div class="preview" id="experienceBlock" style="max-height:none;">—</div>
+    </div>
+
+    <div class="chip-area">
+      <div style="font-weight:700;">Education</div>
+      <div class="preview" id="educationBlock" style="max-height:none;">—</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="kv"><div class="k">analysis_id</div><div class="v" id="analysisId" style="font-family:ui-monospace,monospace">—</div></div>
+
+    <details style="margin-top:10px;">
+      <summary style="cursor:pointer;">Advanced (JSON)</summary>
+      <pre id="fullJson"></pre>
+    </details>
+  </div>
+</div>
 
     </div>
   </div>
@@ -470,6 +533,223 @@
       setBusy(false);
     }
   });
+  function scoreToLabel(score){
+  if(score >= 85) return {label:"Excellent match", cls:"ok"};
+  if(score >= 70) return {label:"Good match", cls:"ok"};
+  if(score >= 55) return {label:"Partial match", cls:"warn"};
+  return {label:"Low match", cls:"warn"};
+}
+
+function safe(obj, path, fallback="—"){
+  try{
+    return path.split(".").reduce((acc,k)=>acc?.[k], obj) ?? fallback;
+  } catch { return fallback; }
+}
+
+function normalizeList(x){
+  if(!x) return [];
+  if(Array.isArray(x)) return x.filter(Boolean).map(String);
+  return [String(x)];
+}
+
+function makeChip(text, type="ok"){
+  const d = document.createElement("div");
+  d.className = "chip";
+  d.style.borderColor = type==="warn" ? "var(--warnLine)" : "var(--okLine)";
+  d.style.background = type==="warn" ? "var(--warn)" : "var(--ok)";
+  d.innerHTML = `<span>${escapeHtml(text)}</span>`;
+  return d;
+}
+
+function renderChipList(container, items, type){
+  container.innerHTML = "";
+  if(!items.length){
+    container.appendChild(makeChip("—", "warn"));
+    return;
+  }
+  items.forEach(s => container.appendChild(makeChip(s, type)));
+}
+
+// Reuse your existing escapeHtml()
+function escapeHtml(str){
+  return String(str)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function buildLinksHtml(linksObj){
+  if(!linksObj || typeof linksObj !== "object") return "—";
+  const entries = Object.entries(linksObj).filter(([_,v]) => v && String(v).trim());
+  if(!entries.length) return "—";
+  return entries.map(([k,v]) => {
+    const url = String(v).startsWith("http") ? String(v) : "https://" + String(v);
+    return `<a href="${escapeHtml(url)}" target="_blank">${escapeHtml(k)}</a>`;
+  }).join(" · ");
+}
+
+function renderHumanReport(payload){
+  // payload = { analysis_id, overall_score, analysis }
+  const score = payload.overall_score ?? 0;
+  const {label, cls} = scoreToLabel(score);
+
+  // elements
+  const resultSection = document.getElementById("resultSection");
+  const analysisIdEl = document.getElementById("analysisId");
+  const fullJsonEl = document.getElementById("fullJson");
+
+  const scorePill = document.getElementById("scorePill");
+  const fitLabel = document.getElementById("fitLabel");
+  const fitSummary = document.getElementById("fitSummary");
+
+  const candHeadline = document.getElementById("candHeadline");
+  const candName = document.getElementById("candName");
+  const candEmail = document.getElementById("candEmail");
+  const candPhone = document.getElementById("candPhone");
+  const candLocation = document.getElementById("candLocation");
+  const candLinks = document.getElementById("candLinks");
+
+  const matchedSkillsEl = document.getElementById("matchedSkills");
+  const missingSkillsEl = document.getElementById("missingSkills");
+  const skillsMeta = document.getElementById("skillsMeta");
+
+  const strengthsGaps = document.getElementById("strengthsGaps");
+  const experienceBlock = document.getElementById("experienceBlock");
+  const educationBlock = document.getElementById("educationBlock");
+
+  const analysis = payload.analysis || {};
+
+  // Set header
+  resultSection.style.display = "block";
+  analysisIdEl.textContent = payload.analysis_id ?? "—";
+  fullJsonEl.textContent = JSON.stringify(analysis, null, 2);
+
+  scorePill.textContent = `Score: ${score}`;
+  scorePill.className = `pill ${cls}`;
+  fitLabel.textContent = label;
+
+  // Candidate section (try multiple schema shapes safely)
+  const name =
+    safe(analysis, "candidate.name", "") ||
+    safe(analysis, "candidate.full_name", "") ||
+    safe(analysis, "profile.name", "—");
+
+  const email =
+    safe(analysis, "candidate.email", "") ||
+    safe(analysis, "candidate.contacts.email", "") ||
+    safe(analysis, "contacts.email", "—");
+
+  const phone =
+    safe(analysis, "candidate.phone", "") ||
+    safe(analysis, "candidate.contacts.phone", "") ||
+    safe(analysis, "contacts.phone", "—");
+
+  const location =
+    safe(analysis, "candidate.location", "") ||
+    safe(analysis, "candidate.address", "") ||
+    safe(analysis, "location", "—");
+
+  const links =
+    analysis.candidate?.links ||
+    analysis.links ||
+    analysis.candidate?.socials ||
+    null;
+
+  const headline =
+    safe(analysis, "summary.headline", "") ||
+    safe(analysis, "summary", "") ||
+    safe(analysis, "profile.headline", "—");
+
+  candHeadline.textContent = headline || "—";
+  candName.textContent = name || "—";
+  candEmail.textContent = email || "—";
+  candPhone.textContent = phone || "—";
+  candLocation.textContent = location || "—";
+  candLinks.innerHTML = buildLinksHtml(links);
+
+  // Summary / strengths / gaps
+  const strengths =
+    normalizeList(safe(analysis, "match.strengths", null))
+    .concat(normalizeList(safe(analysis, "strengths", null)));
+
+  const gaps =
+    normalizeList(safe(analysis, "match.gaps", null))
+    .concat(normalizeList(safe(analysis, "gaps", null)));
+
+  const reco =
+    normalizeList(safe(analysis, "recommendations", null))
+    .concat(normalizeList(safe(analysis, "match.recommendations", null)));
+
+  fitSummary.textContent =
+    (safe(analysis, "summary_text", "") ||
+     safe(analysis, "summary.headline", "") ||
+     safe(analysis, "summary", "")) ||
+    "—";
+
+  strengthsGaps.textContent =
+    `Strengths:\n- ${strengths.length ? strengths.join("\n- ") : "—"}\n\n` +
+    `Gaps:\n- ${gaps.length ? gaps.join("\n- ") : "—"}\n\n` +
+    `Recommendations:\n- ${reco.length ? reco.join("\n- ") : "—"}`;
+
+  // Skills match (compare builder must-have against extracted skills)
+  // Extract skills from analysis (support multiple possible fields)
+  const extractedSkills =
+    normalizeList(safe(analysis, "skills.hard_skills", null))
+    .concat(normalizeList(safe(analysis, "skills.soft_skills", null)))
+    .concat(normalizeList(safe(analysis, "skills.mandatory", null)))
+    .concat(normalizeList(safe(analysis, "skills", null)));
+
+  // You have these arrays in your builder script:
+  // mustHave, niceToHave (global)
+  const must = (typeof mustHave !== "undefined") ? mustHave : [];
+  const nice = (typeof niceToHave !== "undefined") ? niceToHave : [];
+
+  const extractedLower = new Set(extractedSkills.map(s => s.toLowerCase()));
+  const matched = [...must, ...nice].filter(s => extractedLower.has(s.toLowerCase()));
+  const missing = must.filter(s => !extractedLower.has(s.toLowerCase()));
+
+  skillsMeta.textContent = `Extracted skills: ${extractedSkills.length} | Matched: ${matched.length} | Missing must-have: ${missing.length}`;
+  renderChipList(matchedSkillsEl, matched, "ok");
+  renderChipList(missingSkillsEl, missing, "warn");
+
+  // Experience & Education blocks (best-effort rendering)
+  const exp =
+    analysis.experience ||
+    analysis.work_experience ||
+    analysis.employment_history ||
+    [];
+
+  const edu =
+    analysis.education ||
+    analysis.academics ||
+    [];
+
+  const expArr = Array.isArray(exp) ? exp : [];
+  const eduArr = Array.isArray(edu) ? edu : [];
+
+  experienceBlock.textContent = expArr.length
+    ? expArr.map((e, i) => {
+        const title = e.title || e.position || e.role || "Role";
+        const org = e.company || e.organization || e.employer || "";
+        const dates = e.dates || [e.start_date, e.end_date].filter(Boolean).join(" → ");
+        const bullets = normalizeList(e.bullets || e.achievements || e.responsibilities);
+        return `${i+1}) ${title}${org ? " — " + org : ""}${dates ? " ("+dates+")" : ""}\n   - ${bullets.length ? bullets.join("\n   - ") : "—"}`;
+      }).join("\n\n")
+    : "—";
+
+  educationBlock.textContent = eduArr.length
+    ? eduArr.map((e, i) => {
+        const deg = e.degree || e.program || "Degree";
+        const inst = e.institution || e.university || "";
+        const year = e.year || e.graduation_year || "";
+        const extra = [e.gpa ? "GPA: " + e.gpa : "", e.field ? "Field: " + e.field : ""].filter(Boolean).join(" | ");
+        return `${i+1}) ${deg}${inst ? " — " + inst : ""}${year ? " ("+year+")" : ""}${extra ? "\n   " + extra : ""}`;
+      }).join("\n\n")
+    : "—";
+}
+
 
   btnAnalyze.addEventListener("click", async () => {
     setError("");
@@ -488,10 +768,7 @@
       const data = await res.json();
       if(!res.ok) throw new Error(data?.detail || "Analyze failed");
 
-      resultSection.style.display = "block";
-      overallScoreEl.textContent = data.overall_score ?? "—";
-      analysisIdEl.textContent = data.analysis_id ?? "—";
-      fullJsonEl.textContent = JSON.stringify(data.analysis, null, 2);
+      renderHumanReport(data);
 
     } catch (e) {
       setError(e.message);

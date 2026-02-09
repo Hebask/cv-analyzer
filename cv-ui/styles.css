@@ -227,3 +227,6 @@ hr{
 }
 .pill.ok{background:var(--ok);border-color:var(--okLine)}
 .pill.warn{background:var(--warn);border-color:var(--warnLine)}
+
+a { color: #93c5fd; text-decoration: none; }
+a:hover { text-decoration: underline; }
